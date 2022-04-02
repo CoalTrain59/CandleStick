@@ -65,5 +65,6 @@
 #define OFF 0
 #define ON 1
 #define ARMED 2
+#define DISABLED 3
 
 #endif

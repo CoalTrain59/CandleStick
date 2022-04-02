@@ -21,18 +21,37 @@ Adafruit_SSD1331 display = Adafruit_SSD1331(&SPI, cs, dc, rst);
 //HMI Variables
 int lineSelected = 0;
 int screenSelected = homeScreen;
+bool updateNumberMode = false;
+int _setpointLine = setpointLine;
+int _runLine = runLine;
 
 //Phase Shift Globals
 volatile unsigned long pulseTime = 0;
 volatile unsigned long phaseShiftOutputOnTime = 0;
 volatile byte phaseShiftOutput = 0; //byte
-const int timeDelay = 6; // start with a start delay of 4ms
+int phaseShiftTimeDelay; //uS
 
+//Temperature Variables
+int storedSetpoint = 1000; //currently used as uS for testing... 
+int setpointStepSize = 250; //needs to be interval of stored setpoint above this line. 
+
+//Time Delays
+//rotary
+bool rotaryTimerExpired = true;
+unsigned long rotaryTimeStartValue = 0;
+unsigned long rotaryTimeLength = 100; //mS
+unsigned long rotaryTimerCurrentValue = 0; //mS
+//pushbutton
+bool buttonTimerExpired = true;
+unsigned long buttonTimeStartValue = 0;
+unsigned long buttonTimeLength = 100; //mS
+unsigned long buttonTimerCurrentValue = 0; //mS
 
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
-
+  phaseShiftOutput = DISABLED;
+  phaseShiftTimeDelay = getPhaseShift(storedSetpoint); //init the phast shift value. currently stored setpoint for testing.
   // OLED Setup
   Serial.println(F("Start OLED Display"));
   display.begin();
@@ -64,17 +83,21 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
   monitorRotaryEncoder();
-  monitorButtonPress();
+  decideButtonPress();
   phaseShiftOutputControl();
+}
+
+int getPhaseShift(int shift_uS){
+  return shift_uS;
 }
 
 void phaseShiftOutputControl(void){
   noInterrupts();
-  unsigned long currentTime = millis();
-  if((currentTime - pulseTime)>=timeDelay && phaseShiftOutput == ARMED){
+  unsigned long currentTime = micros();
+  if((currentTime - pulseTime)>=phaseShiftTimeDelay && phaseShiftOutput == ARMED){
     //fire the output, set state to phaseShift = ON, as to not send the pulse again;
     digitalWrite(triacDriverPin, HIGH);
-    phaseShiftOutputOnTime = millis();
+    phaseShiftOutputOnTime = micros();
     phaseShiftOutput = ON;
   } else if((currentTime - phaseShiftOutputOnTime) >= 1 && phaseShiftOutput == ON){
     //if phase shift output has been on for more than one millisecond, turn it off. 
@@ -86,44 +109,112 @@ void phaseShiftOutputControl(void){
 
 void optoSigDetectedInterrupt(void){
   //each interrupt is the "start" of a half wave (pos or neg, doesn't matter).
-  pulseTime = millis();
+  pulseTime = micros();
   //re-arm the phase shifter
-  phaseShiftOutput = ARMED;
+  if(phaseShiftOutput != DISABLED) phaseShiftOutput = ARMED;
 }
 
 void increaseDecreaseLineSelected(int direction){
-  if(direction == up){lineSelected = lineSelected - 1;};
-  if(direction == down){lineSelected = lineSelected + 1;};
-  if(lineSelected > 6){lineSelected = 0;};
-  if(lineSelected < 0){lineSelected = 6;};
+  if(!updateNumberMode){
+    if(direction == up){lineSelected = lineSelected - 1;};
+    if(direction == down){lineSelected = lineSelected + 1;};
+    if(lineSelected > getNumberOfOptions()-1){lineSelected = 0;};
+    if(lineSelected < 0){lineSelected = getNumberOfOptions()-1;};
+    screenManager(home_stringTable, 0);
+  }
+}
+
+void increaseDecreaseTempSetpoint(int direction){
+  if(direction == up){storedSetpoint = storedSetpoint + setpointStepSize;}
+  if(direction == down){storedSetpoint = storedSetpoint - setpointStepSize;}
+  if(storedSetpoint < 750) storedSetpoint = 750;
+  if(storedSetpoint > 8000) storedSetpoint = 8000;
+  phaseShiftTimeDelay = storedSetpoint;
   screenManager(home_stringTable, 0);
 }
 
+
+//------------------------------------------------------------------------------
+//Timer functions to control the time delay between Rotary actions
+//------------------------------------------------------------------------------
+void setDelay(int timeDelay){
+  rotaryTimeStartValue = millis();
+  rotaryTimerExpired = false;
+  rotaryTimeLength = timeDelay;
+}
+
+bool isRotaryTimerExpired(void){
+  rotaryTimerCurrentValue = millis();
+  if((rotaryTimerCurrentValue - rotaryTimeStartValue) > rotaryTimeLength){
+      rotaryTimerExpired = true;
+    }
+  return rotaryTimerExpired;
+}
+//------------------------------------------------------------------------------
+
+//------------------------------------------------------------------------------
+//Timer functions to control the time delay between pushbutton actions
+//------------------------------------------------------------------------------
+void setPbDelay(int timeDelay){
+  buttonTimeStartValue = millis();
+  buttonTimerExpired = false;
+  buttonTimeLength = timeDelay;
+}
+
+bool isPushButtonTimerExpired(void){
+  buttonTimerCurrentValue = millis();
+  if((buttonTimerCurrentValue - buttonTimeStartValue) > buttonTimeLength){
+      buttonTimerExpired = true;
+    }
+  return buttonTimerExpired;
+}
+//------------------------------------------------------------------------------
+
 void monitorRotaryEncoder(void)
 {
-  if (rotaryActionState == cwRotated)
-  {
-    increaseDecreaseLineSelected(down);
-    delay(100);
-    rotaryActionState = notMoved;
-  }
-  if (rotaryActionState == ccwRotated)
-  {
-    increaseDecreaseLineSelected(up);
-    delay(100);
-    rotaryActionState = notMoved;
+  //no movement (specifically don't want screen updates) while phaseShiftOutput is on.
+  //only allow rotary cw or ccw when disabled. Allow button press to exit run state.
+  if(phaseShiftOutput == DISABLED){
+    if(isRotaryTimerExpired()){
+      if (rotaryActionState == cwRotated)
+      {
+        if(!updateNumberMode){
+          increaseDecreaseLineSelected(down);
+        } else {
+          increaseDecreaseTempSetpoint(up);
+        }
+        setDelay(rotaryTimeLength);
+        rotaryActionState = notMoved;
+      }
+      if (rotaryActionState == ccwRotated)
+      {
+        if(!updateNumberMode){
+          increaseDecreaseLineSelected(up);
+        } else {
+          increaseDecreaseTempSetpoint(down);
+        }
+        setDelay(rotaryTimeLength);
+        rotaryActionState = notMoved;
+      }
+    }
   }
   if (buttonAction == pressed)
   {
-    display.setTextColor(LED_RED_HIGH);
+    if(lineSelected == _setpointLine){
+      updateNumberMode = !updateNumberMode;
+    } else if(lineSelected == _runLine){
+      if(phaseShiftOutput != DISABLED){
+        phaseShiftOutput = DISABLED;
+      } else {
+        phaseShiftOutput = OFF;
+      }
+    }
     screenManager(home_stringTable, 0);
     buttonAction = noChange;
     prevButtonState = pressed;
   }
   else if (buttonAction == lifted)
   {
-    display.setTextColor(LED_BLUE_HIGH);
-    screenManager(home_stringTable, 0);
     buttonAction = noChange;
     prevButtonState = lifted;
   }
@@ -132,28 +223,37 @@ void monitorRotaryEncoder(void)
 
 void decideRotaryAction(void)
 {
-  if (digitalRead(ccwPin) == HIGH)
-  {
-    rotaryActionState = ccwRotated;
-  }
-  else
-  {
-    rotaryActionState = cwRotated;
+  //only queue up the state if the phaseshiftoutput is disabled.
+  if(phaseShiftOutput == DISABLED){
+    if (digitalRead(ccwPin) == HIGH)
+    {
+      rotaryActionState = ccwRotated;
+    }
+    else
+    {
+      rotaryActionState = cwRotated;
+    }
   }
 }
 
-void monitorButtonPress(void)
+//------------------------------------------------------------------------
+//Decide if button is pressed. Monitor, and if pressed carry out actions
+//------------------------------------------------------------------------
+void decideButtonPress(void)
 {
   int isPressed = !digitalRead(buttonPin);
-  if (isPressed && prevButtonState == lifted){
+  if (isPressed && prevButtonState == lifted && isPushButtonTimerExpired() == true){
     currentButtonState = pressed;
     buttonAction = pressed;
+    setPbDelay(buttonTimeLength);
   }
-  if (!isPressed && prevButtonState == pressed){
+  if (!isPressed && prevButtonState == pressed && isPushButtonTimerExpired() == true){
     currentButtonState = lifted;
     buttonAction = lifted;
+    setPbDelay(buttonTimeLength);
   }
 }
+//------------------------------------------------------------------------
 
 int getNumberOfOptions(void)
 {
@@ -187,11 +287,33 @@ void screenManager(const char *const *screenTable, int shift)
     display.setCursor(0, (rowHeight * (i)));
     if(i < optLength){
       strcpy_P(buffer, (char *)pgm_read_word(&(screenTable[i])));
-      //display.setTextColor(LED_GREEN_HIGH);
-      display.print(buffer);
+      if(i == _runLine){
+        if(phaseShiftOutput != DISABLED){
+          display.setTextColor(LED_RED_HIGH);
+          strcpy(buffer, "Running!");
+        }
+        display.print(buffer);
+        display.setTextColor(LED_BLUE_HIGH);
+      }
+      if(i == _setpointLine){
+        //populate the value into a char array to be printed
+        char valueCharArray[10];
+        int value = storedSetpoint;
+        itoa(value, valueCharArray, 10);
+        strcpy(buffer, valueCharArray);
+        if(updateNumberMode){
+          display.setTextColor(LED_RED_HIGH);
+        }
+        display.print(buffer);
+      } 
+      if(i != _setpointLine && i != _runLine){
+        display.setTextColor(LED_BLUE_HIGH);
+        display.print(buffer);
+      } 
       if (lineSelected == i){
           display.print('<');
       }
+      display.setTextColor(LED_BLUE_HIGH);
     }
   }
 
