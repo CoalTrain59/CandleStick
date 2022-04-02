@@ -10,6 +10,8 @@
 #define dc A4  // Analog Pin 4
 #define rst A3 // Analog Pin 3
 
+#define therm_InputPin A2
+
 #define clear() fillScreen(0)
 
 //uno only has 2 interrupts. one is needed for rotary encoder interrupt, other is needed for optocoupler signal.

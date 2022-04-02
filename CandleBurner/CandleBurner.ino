@@ -111,7 +111,8 @@ double getTemperature(void){
   Serial.print(F(", Resistance: "));
   Serial.print(thermResistance);
   Serial.print(F(", Temperature: ")); */
-  Serial.println(thermTemperature);
+  
+  //Serial.println(thermTemperature);
   
   return thermTemperature;
   }
