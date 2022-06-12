@@ -58,6 +58,8 @@ bool buttonTimerExpired = true;
 unsigned long buttonTimeStartValue = 0;
 unsigned long buttonTimeLength = 100; //mS
 unsigned long buttonTimerCurrentValue = 0; //mS
+//Temperature Timer
+unsigned long tempTimerDuration = 5; //mS
 
 void setup() {
   // put your setup code here, to run once:
@@ -97,15 +99,10 @@ void loop() {
   //REMEMBER! -- Any code in here will effect program speed and drastically effects
   //the pulse time for the TRIAC!
   //REMEMBER! -- For some reason swapping the oscilloscope leads shows a different signal on TRIAC OUTPUT!
+  //CONSIDER: consider using "nonEssentialCode" which is called at the optimal time. 8mS of time is available.
+  //before phase shift outputs begin to fail timing.
 //**************************************************************************************************
   // put your main code here, to run repeatedly:
-
-  //Commenting Temperatures out. They work, but they make program run slow & output seem bad.
-  /* double temp = getTemperature();
-  double filteredTemp = filterInputTemp(temp);
-  if(debugPrintTicker() == true){
-    Serial.println(filteredTemp);
-  } */
 
   monitorRotaryEncoder();
   decideButtonPress();
@@ -148,7 +145,18 @@ long getPhaseShiftTimeFromPercent(int percent){
 }
 //------------------------------------------------------------------------------------------------
 
+void nonEssentialCode(void){
+  if(tempTimerExpired()){
+      double temp = getTemperature();
+      double filteredTemp = filterInputTemp(temp);
+      if(debugPrintTicker() == true){
+        Serial.println(filteredTemp);
+      }
+    }
+}
+
 void phaseShiftOutputControl(void){
+  bool okToRunSlowSoftware = false;
   noInterrupts();
   //convert percentage phase shift into phastshifttimedelay
   long phaseShiftTimeDelay = getPhaseShiftTimeFromPercent(storedSetpoint);
@@ -161,12 +169,18 @@ void phaseShiftOutputControl(void){
     digitalWrite(triacDriverPin, HIGH);
     phaseShiftOutputOnTime = micros();
     phaseShiftOutput = ON;
+    okToRunSlowSoftware = false;
   } else if((currentTime - phaseShiftOutputOnTime) >= 10 && phaseShiftOutput == ON){
     //if phase shift output has been on for more than 10 microSeconds, turn it off. 
     digitalWrite(triacDriverPin,LOW);
     phaseShiftOutput = OFF;
+    okToRunSlowSoftware = true;
   }
   interrupts();
+  //Because ultimate speed is needed, 8mS MAX is available immediatetly afer phaseShiftOutput is turned ON
+  //Code here must complete in 8mS or less!!!
+  if(okToRunSlowSoftware || phaseShiftOutput == DISABLED) nonEssentialCode();
+  okToRunSlowSoftware = false;
 }
 
 void optoSigDetectedInterrupt(void){
@@ -247,6 +261,17 @@ bool debugPrintTicker(void){
 }
 
 //------------------------------------------------------------------------------
+
+bool tempTimerExpired(void){
+  bool tempTimerExpired = false;
+  static unsigned long prevTempTimerStarted = millis();
+  unsigned long currentTime = millis();
+  if((currentTime - prevTempTimerStarted) > tempTimerDuration){
+    tempTimerExpired = true;
+    prevTempTimerStarted = currentTime + 1;
+  }
+  return tempTimerExpired;
+}
 
 void monitorRotaryEncoder(void)
 {
