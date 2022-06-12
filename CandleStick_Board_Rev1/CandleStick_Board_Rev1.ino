@@ -93,12 +93,20 @@ void setup() {
 }
 
 void loop() {
+  //**************************************************************************************************
+  //REMEMBER! -- Any code in here will effect program speed and drastically effects
+  //the pulse time for the TRIAC!
+  //REMEMBER! -- For some reason swapping the oscilloscope leads shows a different signal on TRIAC OUTPUT!
+//**************************************************************************************************
   // put your main code here, to run repeatedly:
-  double temp = getTemperature();
+
+  //Commenting Temperatures out. They work, but they make program run slow & output seem bad.
+  /* double temp = getTemperature();
   double filteredTemp = filterInputTemp(temp);
-  if(debugPrintTicker() == true && false){
+  if(debugPrintTicker() == true){
     Serial.println(filteredTemp);
-  }
+  } */
+
   monitorRotaryEncoder();
   decideButtonPress();
   phaseShiftOutputControl();
@@ -146,13 +154,15 @@ void phaseShiftOutputControl(void){
   long phaseShiftTimeDelay = getPhaseShiftTimeFromPercent(storedSetpoint);
   globalTimeDelay = phaseShiftTimeDelay;
   unsigned long currentTime = micros();
-  if((currentTime - pulseTime)>=phaseShiftTimeDelay && phaseShiftOutput == ARMED){
+  if(phaseShiftOutput == DISABLED){
+    digitalWrite(triacDriverPin,LOW);
+  } else if((currentTime - pulseTime)>=phaseShiftTimeDelay && phaseShiftOutput == ARMED){
     //fire the output, set state to phaseShift = ON, as to not send the pulse again;
     digitalWrite(triacDriverPin, HIGH);
     phaseShiftOutputOnTime = micros();
     phaseShiftOutput = ON;
-  } else if((currentTime - phaseShiftOutputOnTime) >= 500 && phaseShiftOutput == ON){
-    //if phase shift output has been on for more than half millisecond, turn it off. 
+  } else if((currentTime - phaseShiftOutputOnTime) >= 10 && phaseShiftOutput == ON){
+    //if phase shift output has been on for more than 10 microSeconds, turn it off. 
     digitalWrite(triacDriverPin,LOW);
     phaseShiftOutput = OFF;
   }
