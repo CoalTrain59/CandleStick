@@ -96,7 +96,7 @@ void loop() {
   // put your main code here, to run repeatedly:
   double temp = getTemperature();
   double filteredTemp = filterInputTemp(temp);
-  if(debugPrintTicker() == true){
+  if(debugPrintTicker() == true && false){
     Serial.println(filteredTemp);
   }
   monitorRotaryEncoder();
@@ -151,8 +151,8 @@ void phaseShiftOutputControl(void){
     digitalWrite(triacDriverPin, HIGH);
     phaseShiftOutputOnTime = micros();
     phaseShiftOutput = ON;
-  } else if((currentTime - phaseShiftOutputOnTime) >= 1 && phaseShiftOutput == ON){
-    //if phase shift output has been on for more than one millisecond, turn it off. 
+  } else if((currentTime - phaseShiftOutputOnTime) >= 500 && phaseShiftOutput == ON){
+    //if phase shift output has been on for more than half millisecond, turn it off. 
     digitalWrite(triacDriverPin,LOW);
     phaseShiftOutput = OFF;
   }
