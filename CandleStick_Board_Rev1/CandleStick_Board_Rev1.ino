@@ -43,8 +43,8 @@ double knownResistorValue = 10930;
 int heaterOutputPin = 5;
 //Therm calculation variables
 double K = 273.15;
-double T0 = 295.3; //Kelvin Temp read in room
-double R0 = 11830;   //Resistance of therm read in room at temp T0
+double T0 = 298.55; //Kelvin Temp read in room 76F
+double R0 = 10160;   //Resistance of therm read in room at temp T0 10.16k
 double B = 3950;     //B value from manufacturer
 
 //Time Delays
@@ -81,7 +81,7 @@ void setup() {
   pinMode(ccwPin, INPUT);
   pinMode(buttonPin, INPUT_PULLUP);
   pinMode(triacDriverPin, OUTPUT);
-  pinMode(therm_InputPin, INPUT_PULLUP);
+  //pinMode(therm_InputPin, INPUT_PULLUP); Dont use a pull up for an analog input!!!
 //  pinMode(7, OUTPUT);
 
   digitalWrite(triacDriverPin, LOW);
@@ -443,41 +443,24 @@ double getTemperature(void){
   double thermInputADC = analogRead(therm_InputPin);
   //0 - 1023 equates to 0 - 5V
   //convert ADC value to voltage
-  double thermInputVolts = thermInputADC * ((0.0048875855327468));
-  /* Serial.print(F("Thermister Volts = "));
-  Serial.print(thermInputVolts);
-  Serial.print('\n'); */
-
+  double thermInputVolts = thermInputADC * (VccInput/1024);
   //convert thermInput voltage to thermister resistance using voltage divider
-  //note that known resistor is 10.95kOhms
-  double thermResistance = thermInputVolts * knownResistorValue / (5 - thermInputVolts);
-  /* Serial.print(F("Therm Resistance: "));
-  Serial.print(thermResistance);
-  newLine(); */
+  //note that known resistor is 10.93kOhms
+  double thermResistance = thermInputVolts * knownResistorValue / (VccInput - thermInputVolts);
   //use thermister resistance in equation below to determine Temperature
-  // T0 = 295.3 Kelvin (measured temperature in room)
-  // R0 = 11.83kOhms (measured resistance in room at T0 Temp)
+  // T0 = 298.35 Kelvin (measured temperature in room)
+  // R0 = 10.16kOhms (measured resistance in room at T0 Temp)
   // B = B value provided by manufacturer
   //Equation to solve for Resistance: R0 * e^(B * (1/T - 1/T0))
-  //Substituting Values: 11.83k * e^(3950 * (1/T - 1/295.3 Kelvin))
+  //Substituting Values: 10.16k * e^(3950 * (1/T - 1/298.65 Kelvin))
   //Solve for T
   //T = 1 / ((1/T0) + (ln(R/R0)/B))
   //double thermTemperature = 1 / ((1/T0) + (log(thermResistance / R0) / B));
-  double thermTemperature = 1 / (0.0033898305 + (log(thermResistance / R0) / B));
+  double thermTemperature = 1 / (1/T0 + (log(thermResistance / R0) / B));
   //Print the temperature to terminal every second
-/*   Serial.print(F("Temp: "));
-  Serial.print(thermTemperature);
-  newLine(); */
   //Loop Delay
   thermTemperature = thermTemperature - K;
-
-/*   Serial.print(F("Volts = "));
-  Serial.print(thermInputVolts);
-  Serial.print(F(", Resistance: "));
-  Serial.print(thermResistance);
-  Serial.print(F(", Temperature: ")); */
+  double thermTemperatureF = thermTemperature * 9/5 +32;
   
-  //Serial.println(thermTemperature);
-  
-  return thermTemperature;
+  return thermTemperatureF;
   }
