@@ -60,11 +60,11 @@ unsigned long buttonTimeStartValue = 0;
 unsigned long buttonTimeLength = 100; //mS
 unsigned long buttonTimerCurrentValue = 0; //mS
 //Temperature Timer
-unsigned long tempTimerDuration = 5; //mS
+unsigned long tempTimerDuration = 10; //mS
 
 //PID Control
 double input_pid, output_pid, setPoint = 150;
-double Kp=1.65,Ki=0.01,Kd=0.0;
+double Kp=1.65,Ki=0.02,Kd=0.0;
 PID pid(&input_pid, &output_pid, &setPoint,Kp,Ki,Kd,DIRECT);
 
 void setup() {
