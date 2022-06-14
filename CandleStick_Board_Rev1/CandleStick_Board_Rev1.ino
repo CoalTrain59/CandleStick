@@ -8,6 +8,7 @@
 #include "CL_Defines.h"
 #include "screenColors.h"
 #include "TextDic.h"
+#include <PID_v1.h>
 
 // Rotary Pin Actions
 volatile byte rotaryActionState = notMoved;  // 0 nothing, 1 is cwRotated, 2 is ccwRotated
@@ -37,7 +38,7 @@ int phaseShiftPercent; //uS
 long globalTimeDelay; //for debugging (access to value outside of function);
 
 //Temperature Variables
-int storedSetpoint = 50; //currently used as percent for testing... 
+int storedSetpoint = 50; //used as percent for testing... % of phase shift "allowable" in controlled range
 int setpointStepSize = 5; //needs to be interval of stored setpoint above this line. 
 double knownResistorValue = 10930;
 int heaterOutputPin = 5;
@@ -59,7 +60,12 @@ unsigned long buttonTimeStartValue = 0;
 unsigned long buttonTimeLength = 100; //mS
 unsigned long buttonTimerCurrentValue = 0; //mS
 //Temperature Timer
-unsigned long tempTimerDuration = 5; //mS
+unsigned long tempTimerDuration = 10; //mS
+
+//PID Control
+double input_pid, output_pid, setPoint = 150;
+double Kp=1.65,Ki=0.02,Kd=0.0;
+PID pid(&input_pid, &output_pid, &setPoint,Kp,Ki,Kd,DIRECT);
 
 void setup() {
   // put your setup code here, to run once:
@@ -88,6 +94,8 @@ void setup() {
 
   attachInterrupt(digitalPinToInterrupt(cwPin), decideRotaryAction, FALLING);
   attachInterrupt(digitalPinToInterrupt(optoSig), optoSigDetectedInterrupt, RISING);
+  pid.SetOutputLimits(0,100); //set PID to feed 0 to 100 percent output.
+  pid.SetMode(AUTOMATIC);
 
   delay(3000);
   screenManager(home_stringTable, 0);
@@ -135,12 +143,15 @@ double filterInputTemp(double newTemp){
 //Pass in 0 for 0%, get very little / no power
 //------------------------------------------------------------------------------------------------
 long getPhaseShiftTimeFromPercent(int percent){
+  if(percent > 100) percent = 100; //sanitize the input
   long uS_min = 8000; //8000uS delay equates to 0 percent power
-  long uS_max = 4000; //4000uS delay equates to 100 percent power (that we are willing to apply);
+  long uS_max = 5000; //5000uS delay equates to 100 percent power (that we are willing to apply);
   long phaseShift_uS = 0;
   phaseShift_uS = (uS_min - uS_max) * percent;
   phaseShift_uS = phaseShift_uS / 100;
   phaseShift_uS = uS_min - phaseShift_uS;
+  //return -1 so that we don't fire after a zero cross, if close to setpoint
+  if(phaseShift_uS > 7800) phaseShift_uS = 7800;
   return phaseShift_uS;
 }
 //------------------------------------------------------------------------------------------------
@@ -149,8 +160,18 @@ void nonEssentialCode(void){
   if(tempTimerExpired()){
       double temp = getTemperature();
       double filteredTemp = filterInputTemp(temp);
+      input_pid = filteredTemp;
+      if(phaseShiftOutput != DISABLED){
+         pid.Compute();
+      } else {
+        output_pid = 0;
+        }
       if(debugPrintTicker() == true){
-        Serial.println(filteredTemp);
+        Serial.print(filteredTemp);
+        Serial.print(",");
+        Serial.print(output_pid);
+        Serial.print(",");
+        Serial.println(setPoint);
       }
     }
 }
@@ -159,12 +180,13 @@ void phaseShiftOutputControl(void){
   bool okToRunSlowSoftware = false;
   noInterrupts();
   //convert percentage phase shift into phastshifttimedelay
-  long phaseShiftTimeDelay = getPhaseShiftTimeFromPercent(storedSetpoint);
+  //long phaseShiftTimeDelay = getPhaseShiftTimeFromPercent(storedSetpoint); //used for manual setting/debug
+  long phaseShiftTimeDelay = getPhaseShiftTimeFromPercent(output_pid);
   globalTimeDelay = phaseShiftTimeDelay;
   unsigned long currentTime = micros();
   if(phaseShiftOutput == DISABLED){
     digitalWrite(triacDriverPin,LOW);
-  } else if((currentTime - pulseTime)>=phaseShiftTimeDelay && phaseShiftOutput == ARMED){
+  } else if((currentTime - pulseTime)>=phaseShiftTimeDelay && phaseShiftOutput == ARMED && phaseShiftTimeDelay != -1){
     //fire the output, set state to phaseShift = ON, as to not send the pulse again;
     digitalWrite(triacDriverPin, HIGH);
     phaseShiftOutputOnTime = micros();
