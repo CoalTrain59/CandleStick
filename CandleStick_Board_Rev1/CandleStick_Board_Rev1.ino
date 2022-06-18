@@ -21,6 +21,7 @@ Adafruit_SSD1331 display = Adafruit_SSD1331(&SPI, cs, dc, rst);
 
 //debug ticker (how often it prints)
 int tickerTimeInterval = 250;
+bool plotData = true; //turn on and off plotting.
 
 //HMI Variables
 int lineSelected = 0;
@@ -28,17 +29,17 @@ int screenSelected = homeScreen;
 bool updateNumberMode = false;
 int _setpointLine = setpointLine;
 int _runLine = runLine;
-int _percentLine = percentLine;
+int _currentTempLine = currentTempLine;
 
 //Phase Shift Globals
 volatile unsigned long pulseTime = 0;
 volatile unsigned long phaseShiftOutputOnTime = 0;
-volatile byte phaseShiftOutput = 0; //byte
+volatile byte phaseShiftOutput = 3; //byte
 int phaseShiftPercent; //uS
 long globalTimeDelay; //for debugging (access to value outside of function);
 
 //Temperature Variables
-int storedSetpoint = 50; //used as percent for testing... % of phase shift "allowable" in controlled range
+double storedSetpoint = 150; //temperature setpoint
 int setpointStepSize = 5; //needs to be interval of stored setpoint above this line. 
 double knownResistorValue = 10930;
 int heaterOutputPin = 5;
@@ -61,11 +62,13 @@ unsigned long buttonTimeLength = 100; //mS
 unsigned long buttonTimerCurrentValue = 0; //mS
 //Temperature Timer
 unsigned long tempTimerDuration = 10; //mS
+unsigned long setpointTimerDuration = 10000; //mS
+int setpointTimerExpiredFlag = COUNTING; //FLAG!! must be reset after calling it's respective timer.
 
 //PID Control
-double input_pid, output_pid, setPoint = 150;
+double input_pid, output_pid;
 double Kp=1.65,Ki=0.02,Kd=0.0;
-PID pid(&input_pid, &output_pid, &setPoint,Kp,Ki,Kd,DIRECT);
+PID pid(&input_pid, &output_pid, &storedSetpoint,Kp,Ki,Kd,DIRECT);
 
 void setup() {
   // put your setup code here, to run once:
@@ -165,13 +168,30 @@ void nonEssentialCode(void){
          pid.Compute();
       } else {
         output_pid = 0;
+      }
+      int isSetpointTimerExpired = setpointTimerExpired();
+      if(isSetpointTimerExpired == EXPIRED || isSetpointTimerExpired == HOLD){
+        //if phaseShiftOutput is ON or ARMED, this is not safe to do. Wait untill OFF or ARMED!
+        //executes every 10 seconds!
+        if(phaseShiftOutput == OFF || phaseShiftOutput == DISABLED){
+          noInterrupts();
+          byte prevPhaseShiftOutput = phaseShiftOutput;
+          phaseShiftOutput = DISABLED;
+          screenManager(home_stringTable, 0);
+          phaseShiftOutput = prevPhaseShiftOutput;
+          setpointTimerExpiredFlag = COUNTING;
+          interrupts();
+        } else {
+          //put timer on HOLD, untill conditions above are met and code can execute.
+          setpointTimerExpiredFlag = HOLD;
         }
-      if(debugPrintTicker() == true){
+      }
+      if(debugPrintTicker() == true && plotData){
         Serial.print(filteredTemp);
         Serial.print(",");
         Serial.print(output_pid);
         Serial.print(",");
-        Serial.println(setPoint);
+        Serial.println(storedSetpoint);
       }
     }
 }
@@ -226,7 +246,7 @@ void increaseDecreaseTempSetpoint(int direction){
   if(direction == up){storedSetpoint = storedSetpoint + setpointStepSize;}
   if(direction == down){storedSetpoint = storedSetpoint - setpointStepSize;}
   if(storedSetpoint < 0) storedSetpoint = 0;
-  if(storedSetpoint > 100) storedSetpoint = 100;
+  if(storedSetpoint > 250) storedSetpoint = 250;
   phaseShiftPercent = storedSetpoint;
   screenManager(home_stringTable, 0);
 }
@@ -283,6 +303,8 @@ bool debugPrintTicker(void){
 }
 
 //------------------------------------------------------------------------------
+//Timer function to control when to calculate temperature
+//------------------------------------------------------------------------------
 
 bool tempTimerExpired(void){
   bool tempTimerExpired = false;
@@ -293,6 +315,22 @@ bool tempTimerExpired(void){
     prevTempTimerStarted = currentTime + 1;
   }
   return tempTimerExpired;
+}
+
+//------------------------------------------------------------------------------
+//Timer function to control when to check if we are in the setpoint tolerance.
+//MUST RESET THE FLAG in function calling this!! This allows program to continue, 
+//if the code relying on this can't execute. 
+//------------------------------------------------------------------------------
+
+int setpointTimerExpired(void){
+  static unsigned long prevSetPointTimerStarted = millis();
+  unsigned long currentTime = millis();
+  if((currentTime - prevSetPointTimerStarted) > setpointTimerDuration && setpointTimerExpiredFlag != HOLD){
+    setpointTimerExpiredFlag = EXPIRED;
+    prevSetPointTimerStarted = currentTime + 1;
+  }
+  return setpointTimerExpiredFlag;
 }
 
 void monitorRotaryEncoder(void)
@@ -395,6 +433,10 @@ int getNumberOfOptions(void)
   }
 }
 
+void printNewLine()
+{
+  Serial.print('\n');
+}
 
 void screenManager(const char *const *screenTable, int shift)
 {
@@ -409,6 +451,7 @@ void screenManager(const char *const *screenTable, int shift)
   char buffer[20]; // max character on screen is 14, add one for terminating char ( i think ). 20 is just extra space.
   int maxRowsOnScreen_ = maxRowsOnScreen;
   for (int i = 0; i < maxRowsOnScreen_; i++){
+    buffer[0] = '\0'; //this adds null character to "reinitialize" the char array.
     display.setCursor(0, (rowHeight * (i)));
     if(i < optLength){
       strcpy_P(buffer, (char *)pgm_read_word(&(screenTable[i])));
@@ -423,26 +466,39 @@ void screenManager(const char *const *screenTable, int shift)
       if(i == _setpointLine){
         //populate the value into a char array to be printed
         char valueCharArray[10];
+        //int value = int(storedSetpoint);
         int value = storedSetpoint;
         itoa(value, valueCharArray, 10);
-        strcpy(buffer, valueCharArray);
+        int len = strlen(buffer); //get length of buffer
+        int valLength = strlen(valueCharArray);
+        valueCharArray[valLength] = '\0'; //at null at end of char array. for some reason, this is needed.
+        for(int j = 0; j <= valLength; j++){
+          buffer[len+j] = valueCharArray[j];
+        }
         if(updateNumberMode){
           display.setTextColor(LED_RED_HIGH);
         }
         display.print(buffer);
       } 
-      if(i == _percentLine){
+      if(i == _currentTempLine){
         //populate the value into a char array to be printed
         char valueCharArray[10];
-        long value = globalTimeDelay;
+        int value = int(input_pid);
         itoa(value, valueCharArray, 10);
-        strcpy(buffer, valueCharArray);
-        if(updateNumberMode){
+        int len = strlen(buffer); //get length of buffer
+        int valLength = strlen(valueCharArray);
+        valueCharArray[valLength] = '\0'; //at null at end of char array. for some reason, this is needed.
+        for(int j = 0; j <= valLength; j++){
+          buffer[len+j] = valueCharArray[j];
+        }
+        if(abs(output_pid - input_pid) < storedSetpoint * 0.05){
           display.setTextColor(LED_GREEN_HIGH);
+        } else {
+          display.setTextColor(LED_BLUE_HIGH);
         }
         display.print(buffer);
-      } 
-      if(i != _setpointLine && i != _runLine && i != _percentLine){
+      }
+      if(i != _setpointLine && i != _runLine && i != _currentTempLine){
         display.setTextColor(LED_BLUE_HIGH);
         display.print(buffer);
       } 

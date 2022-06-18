@@ -69,4 +69,9 @@
 #define ARMED 2
 #define DISABLED 3
 
+//states for timers that get reset after code that needs it executes, not necessarily next loop.
+#define EXPIRED 0
+#define HOLD 1
+#define COUNTING 2
+
 #endif
