@@ -183,11 +183,13 @@ void nonEssentialCode(void){
       }
       int isSetpointTimerExpired = setpointTimerExpired();
       if(isSetpointTimerExpired == EXPIRED || isSetpointTimerExpired == HOLD){
-        //if phaseShiftOutput is ON or ARMED, this is not safe to do. Wait untill OFF or ARMED!
+        //if phaseShiftOutput is ON , this is not safe to do. Wait untill OFF or DISABLED!
+        //but if ARMED, then set it back to "OFF" after work done.
         //executes every 10 seconds!
-        if(phaseShiftOutput == OFF || phaseShiftOutput == DISABLED){
+        if(phaseShiftOutput != ON){
           noInterrupts();
           byte prevPhaseShiftOutput = phaseShiftOutput;
+          if (prevPhaseShiftOutput == ARMED) prevPhaseShiftOutput = OFF;
           phaseShiftOutput = DISABLED;
           //create logic to update the screen appropriately. Need to disable output for safety,
           //but then the screen logic doesn't work. display override fixes this.
@@ -511,7 +513,7 @@ void screenManager(const char *const *screenTable, int shift)
         for(int j = 0; j <= valLength; j++){
           buffer[len+j] = valueCharArray[j];
         }
-        if(abs(output_pid - input_pid) < storedSetpoint * 0.05){
+        if(abs(storedSetpoint - input_pid) < storedSetpoint * 0.05){
           display.setTextColor(LED_GREEN_HIGH);
         } else {
           display.setTextColor(LED_BLUE_HIGH);
