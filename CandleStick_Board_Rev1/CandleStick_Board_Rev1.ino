@@ -40,6 +40,9 @@ long globalTimeDelay; //for debugging (access to value outside of function);
 
 //Temperature Variables
 double storedSetpoint = 150; //temperature setpoint
+int upperAllowableTemperature = 250; //don't allow user to set above this value
+int upperBelieveableTemperature = 300; //used for thermister "believable" upper limit.
+int roomTemperatureValue = 50; //used for "believeable" temperature check
 int setpointStepSize = 5; //needs to be interval of stored setpoint above this line. 
 double knownResistorValue = 10930;
 int heaterOutputPin = 5;
@@ -48,6 +51,9 @@ double K = 273.15;
 double T0 = 298.55; //Kelvin Temp read in room 76F
 double R0 = 10160;   //Resistance of therm read in room at temp T0 10.16k
 double B = 3950;     //B value from manufacturer
+
+//errors
+byte errorMode = NOERROR; //0 is no error
 
 //Time Delays
 //rotary
@@ -100,7 +106,10 @@ void setup() {
   pid.SetOutputLimits(0,100); //set PID to feed 0 to 100 percent output.
   pid.SetMode(AUTOMATIC);
 
-  delay(3000);
+  delay(1000);
+  phaseShiftOutputControl();
+  delay(2000);
+  phaseShiftOutputControl();
   screenManager(home_stringTable, 0);
 
 }
@@ -164,6 +173,13 @@ void nonEssentialCode(void){
       double temp = getTemperature();
       double filteredTemp = filterInputTemp(temp);
       input_pid = filteredTemp;
+      if(filteredTemp > upperBelieveableTemperature || filteredTemp < roomTemperatureValue){
+        //go into error mode. disable the phase shift output
+        errorMode = errorMode | THERMERROR;
+        phaseShiftOutput = DISABLED;
+      } else {
+        errorMode = errorMode & B11111110; //clears the thermerror bit.
+      }
       if(phaseShiftOutput != DISABLED){
          pid.Compute();
       } else {
@@ -246,7 +262,7 @@ void increaseDecreaseTempSetpoint(int direction){
   if(direction == up){storedSetpoint = storedSetpoint + setpointStepSize;}
   if(direction == down){storedSetpoint = storedSetpoint - setpointStepSize;}
   if(storedSetpoint < 0) storedSetpoint = 0;
-  if(storedSetpoint > 250) storedSetpoint = 250;
+  if(storedSetpoint > upperAllowableTemperature) storedSetpoint = upperAllowableTemperature;
   phaseShiftPercent = storedSetpoint;
   screenManager(home_stringTable, 0);
 }
@@ -456,7 +472,7 @@ void screenManager(const char *const *screenTable, int shift)
     if(i < optLength){
       strcpy_P(buffer, (char *)pgm_read_word(&(screenTable[i])));
       if(i == _runLine){
-        if(phaseShiftOutput != DISABLED){
+        if(phaseShiftOutput != DISABLED && errorMode == 0){
           display.setTextColor(LED_RED_HIGH);
           strcpy(buffer, "Running!");
         }
@@ -495,6 +511,11 @@ void screenManager(const char *const *screenTable, int shift)
           display.setTextColor(LED_GREEN_HIGH);
         } else {
           display.setTextColor(LED_BLUE_HIGH);
+        }
+        if(errorMode & THERMERROR){
+          //therm error is present. hijack the buffer
+          strcpy(buffer, "THERM ERROR");
+          display.setTextColor(LED_RED_HIGH);
         }
         display.print(buffer);
       }

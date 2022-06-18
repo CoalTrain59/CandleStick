@@ -74,4 +74,9 @@
 #define HOLD 1
 #define COUNTING 2
 
+//errors *SEE NOTE
+#define NOERROR 0
+#define THERMERROR 1
+//errors are bit anded, so that multiples can exist.
+
 #endif
