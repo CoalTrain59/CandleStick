@@ -35,6 +35,7 @@ int _currentTempLine = currentTempLine;
 volatile unsigned long pulseTime = 0;
 volatile unsigned long phaseShiftOutputOnTime = 0;
 volatile byte phaseShiftOutput = 3; //byte
+int phaseShiftOutputDisplayOverride;
 int phaseShiftPercent; //uS
 long globalTimeDelay; //for debugging (access to value outside of function);
 
@@ -106,12 +107,7 @@ void setup() {
   pid.SetOutputLimits(0,100); //set PID to feed 0 to 100 percent output.
   pid.SetMode(AUTOMATIC);
 
-  delay(1000);
-  phaseShiftOutputControl();
-  delay(2000);
-  phaseShiftOutputControl();
-  screenManager(home_stringTable, 0);
-
+  //screenManager(home_stringTable, 0);
 }
 
 void loop() {
@@ -193,6 +189,13 @@ void nonEssentialCode(void){
           noInterrupts();
           byte prevPhaseShiftOutput = phaseShiftOutput;
           phaseShiftOutput = DISABLED;
+          //create logic to update the screen appropriately. Need to disable output for safety,
+          //but then the screen logic doesn't work. display override fixes this.
+          if(prevPhaseShiftOutput != DISABLED){
+            phaseShiftOutputDisplayOverride = UPDATINGRUNNINGSCREEN;
+          } else {
+            phaseShiftOutputDisplayOverride = NOOVERRIDE;
+          }
           screenManager(home_stringTable, 0);
           phaseShiftOutput = prevPhaseShiftOutput;
           setpointTimerExpiredFlag = COUNTING;
@@ -384,6 +387,7 @@ void monitorRotaryEncoder(void)
     } else if(lineSelected == _runLine){
       if(phaseShiftOutput != DISABLED){
         phaseShiftOutput = DISABLED;
+        phaseShiftOutputDisplayOverride = NOOVERRIDE; 
       } else {
         phaseShiftOutput = OFF;
       }
@@ -472,7 +476,7 @@ void screenManager(const char *const *screenTable, int shift)
     if(i < optLength){
       strcpy_P(buffer, (char *)pgm_read_word(&(screenTable[i])));
       if(i == _runLine){
-        if(phaseShiftOutput != DISABLED && errorMode == 0){
+        if((phaseShiftOutput != DISABLED || phaseShiftOutputDisplayOverride == UPDATINGRUNNINGSCREEN) && errorMode == 0){
           display.setTextColor(LED_RED_HIGH);
           strcpy(buffer, "Running!");
         }
