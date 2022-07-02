@@ -3,7 +3,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1331.h>
 #include <avr/pgmspace.h>
-#include <pgmStrToRAM.h>
+/* #include <pgmStrToRAM.h> */
 #include <SPI.h>
 #include "CL_Defines.h"
 #include "screenColors.h"
