@@ -3,7 +3,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1331.h>
 #include <avr/pgmspace.h>
-#include <pgmStrToRAM.h>
+//#include <pgmStrToRAM.h>
 #include <SPI.h>
 #include "CL_Defines.h"
 #include "screenColors.h"
@@ -20,7 +20,7 @@ int currentButtonState = lifted;
 Adafruit_SSD1331 display = Adafruit_SSD1331(&SPI, cs, dc, rst);
 
 //debug ticker (how often it prints)
-int tickerTimeInterval = 250;
+int tickerTimeInterval = 1000;
 bool plotData = true; //turn on and off plotting.
 
 //HMI Variables
@@ -40,9 +40,9 @@ int phaseShiftPercent; //uS
 long globalTimeDelay; //for debugging (access to value outside of function);
 
 //Temperature Variables
-double storedSetpoint = 150; //temperature setpoint
-int upperAllowableTemperature = 250; //don't allow user to set above this value
-int upperBelieveableTemperature = 300; //used for thermister "believable" upper limit.
+double storedSetpoint = 455; //temperature setpoint
+int upperAllowableTemperature = 460; //don't allow user to set above this value
+int upperBelieveableTemperature = 600; //used for thermister "believable" upper limit.
 int roomTemperatureValue = 50; //used for "believeable" temperature check
 int setpointStepSize = 5; //needs to be interval of stored setpoint above this line. 
 double knownResistorValue = 10930;
