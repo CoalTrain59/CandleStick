@@ -40,11 +40,11 @@ int phaseShiftPercent; //uS
 long globalTimeDelay; //for debugging (access to value outside of function);
 
 //Temperature Variables
-double storedSetpoint = 150; //temperature setpoint
-int upperAllowableTemperature = 250; //don't allow user to set above this value
+double storedSetpoint = 250; //temperature setpoint
+int upperAllowableTemperature = 350; //don't allow user to set above this value
 int upperBelieveableTemperature = 300; //used for thermister "believable" upper limit.
 int roomTemperatureValue = 50; //used for "believeable" temperature check
-int setpointStepSize = 5; //needs to be interval of stored setpoint above this line. 
+int setpointStepSize = 10; //needs to be interval of stored setpoint above this line. 
 double knownResistorValue = 10930;
 int heaterOutputPin = 5;
 //Therm calculation variables
